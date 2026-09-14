@@ -1,12 +1,13 @@
 // lib/homepage.dart
-// Halaman utama aplikasi: menampilkan daftar artikel, fitur pencarian,
-// dan penyaringan berdasarkan kategori. Artikel paling atas tampil
-// sebagai "Featured" (kartu besar), sisanya tampil sebagai kartu kecil.
+// Halaman utama aplikasi Bacain
+
 import 'package:flutter/material.dart';
+
 import 'models/post.dart';
 import 'pages/detailpages.dart';
 import 'pages/tambahpost.dart';
 import 'theme.dart';
+import 'services/api_services.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,84 +17,150 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Daftar artikel yang ditampilkan.
-  // TODO: ganti dengan hasil GET /posts dari REST API saat backend siap.
-  List<Post> posts = List.from(dummyPosts);
+  // Data artikel dari backend
+  List<Post> posts = [];
 
-  // Kategori yang sedang dipilih (nilai awal: semua artikel).
+  // Status loading dan error
+  bool isLoading = true;
+  String? errorMessage;
+
+  // Kategori yang dipilih
   String selectedCategory = 'Semua';
 
-  // Kata kunci pencarian yang diketik user.
+  // Kata kunci pencarian
   String _query = '';
 
-  // Daftar kategori unik dari semua artikel + "Semua".
-  List<String> get categories {
-    final cats = posts.map((p) => p.category).toSet().toList();
-    return ['Semua', ...cats];
+  @override
+  void initState() {
+    super.initState();
+    loadPosts();
   }
 
-  // Artikel yang tampil setelah 2 tahap penyaringan:
-  // 1. Filter berdasarkan kategori yang dipilih.
-  // 2. Filter berdasarkan kata kunci pencarian (judul/ringkasan/penulis).
-  List<Post> get filteredPosts {
-    final q = _query.trim().toLowerCase();
-    final byCategory = selectedCategory == 'Semua'
-        ? posts
-        : posts.where((p) => p.category == selectedCategory).toList();
-    if (q.isEmpty) return byCategory;
-    return byCategory
-        .where((p) =>
-            p.title.toLowerCase().contains(q) ||
-            p.excerpt.toLowerCase().contains(q) ||
-            p.author.toLowerCase().contains(q))
-        .toList();
-  }
+  // Mengambil artikel dari backend
+  Future<void> loadPosts() async {
+    try {
+      final data = await ApiService.getPosts();
 
-  // ID postingan baru = ID terbesar di daftar + 1, agar tidak bentrok.
-  int get _nextPostId {
-    int maxId = 0;
-    for (final post in posts) {
-      if ((post.id ?? 0) > maxId) maxId = post.id ?? 0;
-    }
-    return maxId + 1;
-  }
+      final loadedPosts = data.map<Post>((item) {
+        return Post(
+          id: item['id'],
+          title: item['title'] ?? '',
+          content: item['content'] ?? '',
+          excerpt: item['content'] ?? '',
+          author: 'Admin',
+          category: item['category_name'] ?? 'Umum',
+          readMinutes: 1,
+        );
+      }).toList();
 
-  // Membuka halaman detail artikel.
-  // Saat kembali, hasil navigasi dibaca untuk memperbarui daftar:
-  // - hasil 'deleted'  => artikel dihapus.
-  // - hasil berupa Post => artikel diedit (perbarui datanya).
-  void _openDetail(Post post) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => DetailPage(post: post)),
-    );
-    if (result == 'deleted') {
-      setState(() => posts.removeWhere((p) => p.id == post.id));
-    } else if (result is Post) {
+      if (!mounted) return;
+
       setState(() {
-        final index = posts.indexWhere((p) => p.id == result.id);
-        if (index != -1) posts[index] = result;
+        posts = loadedPosts;
+        isLoading = false;
+        errorMessage = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+        errorMessage = error.toString();
       });
     }
   }
 
-  // Membuka halaman form untuk membuat artikel baru.
-  // Hasilnya berupa Post baru yang langsung ditambahkan di paling atas.
-  void _openCreateForm() async {
-    final newPost = await Navigator.push<Post>(
+  // Daftar kategori
+  List<String> get categories {
+    final cats = posts.map((post) => post.category).toSet().toList();
+    return ['Semua', ...cats];
+  }
+
+  // Filter artikel berdasarkan kategori dan pencarian
+  List<Post> get filteredPosts {
+    final q = _query.trim().toLowerCase();
+
+    final byCategory = selectedCategory == 'Semua'
+        ? posts
+        : posts.where((post) => post.category == selectedCategory).toList();
+
+    if (q.isEmpty) {
+      return byCategory;
+    }
+
+    return byCategory
+        .where(
+          (post) =>
+              post.title.toLowerCase().contains(q) ||
+              post.excerpt.toLowerCase().contains(q) ||
+              post.author.toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  // Membuka detail artikel
+  Future<void> _openDetail(Post post) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DetailPage(post: post)),
+    );
+
+    if (result == 'deleted' || result is Post) {
+      await loadPosts();
+    }
+  }
+
+  // Membuka form tambah artikel
+  Future<void> _openCreateForm() async {
+    await Navigator.push<Post>(
       context,
       MaterialPageRoute(builder: (_) => const TambahPostPage()),
     );
-    if (newPost != null) {
-      setState(() => posts.insert(0, newPost.copyWith(id: _nextPostId)));
-    }
+
+    // Ambil ulang data dari backend setelah kembali
+    await loadPosts();
   }
-  
-  // Menyusun tampilan halaman:
-  // header -> kolom pencarian -> chips kategori -> judul "Terbaru" ->
-  // kartu featured (jika ada) -> daftar kartu artikel -> tombol menulis.
+
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (errorMessage != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                const Text(
+                  'Gagal mengambil artikel',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      isLoading = true;
+                    });
+
+                    loadPosts();
+                  },
+                  child: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final list = filteredPosts;
     final featured = list.isNotEmpty ? list.first : null;
     final rest = list.length > 1 ? list.sublist(1) : <Post>[];
@@ -104,21 +171,30 @@ class _HomePageState extends State<HomePage> {
         padding: EdgeInsets.zero,
         children: [
           _buildHeader(),
+
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
             child: _buildSearchField(),
           ),
+
           _buildCategoryChips(),
+
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: _buildSectionTitle(rest),
+            child: _buildSectionTitle(),
           ),
+
           if (featured != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-              child: _FeaturedCard(post: featured, onTap: () => _openDetail(featured)),
+              child: _FeaturedCard(
+                post: featured,
+                onTap: () => _openDetail(featured),
+              ),
             ),
+
           const SizedBox(height: 20),
+
           if (rest.isEmpty)
             const _EmptyState()
           else
@@ -128,6 +204,7 @@ class _HomePageState extends State<HomePage> {
                 child: _PostCard(post: post, onTap: () => _openDetail(post)),
               ),
             ),
+
           const SizedBox(height: 96),
         ],
       ),
@@ -135,7 +212,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Header bergradasi berisi nama aplikasi dan tombol notifikasi.
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
@@ -191,8 +267,11 @@ class _HomePageState extends State<HomePage> {
                 color: Colors.white.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.notifications_none_rounded,
-                  color: Colors.white, size: 20),
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ],
         ),
@@ -200,26 +279,39 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Kolom pencarian; tombol "x" muncul saat ada teks untuk menghapus pencarian.
   Widget _buildSearchField() {
     return TextField(
-      onChanged: (value) => setState(() => _query = value),
+      onChanged: (value) {
+        setState(() {
+          _query = value;
+        });
+      },
       style: const TextStyle(fontSize: 14.5),
       decoration: InputDecoration(
         hintText: 'Cari artikel, kategori, atau penulis...',
-        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.inkSoft, size: 20),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppColors.inkSoft,
+          size: 20,
+        ),
         suffixIcon: _query.isEmpty
             ? null
             : IconButton(
-                icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.inkSoft),
-                onPressed: () => setState(() => _query = ''),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: AppColors.inkSoft,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _query = '';
+                  });
+                },
               ),
-        prefixIconColor: AppColors.inkSoft,
       ),
     );
   }
 
-  // Baris chips kategori yang bisa digeser (scroll horizontal).
   Widget _buildCategoryChips() {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
@@ -229,12 +321,17 @@ class _HomePageState extends State<HomePage> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: categories.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             final cat = categories[index];
             final isSelected = cat == selectedCategory;
+
             return GestureDetector(
-              onTap: () => setState(() => selectedCategory = cat),
+              onTap: () {
+                setState(() {
+                  selectedCategory = cat;
+                });
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -242,7 +339,9 @@ class _HomePageState extends State<HomePage> {
                 decoration: BoxDecoration(
                   gradient: isSelected
                       ? AppColors.brandGradient
-                      : const LinearGradient(colors: [Colors.white, Colors.white]),
+                      : const LinearGradient(
+                          colors: [Colors.white, Colors.white],
+                        ),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: isSelected
                       ? [
@@ -270,8 +369,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Judul bagian "Terbaru" + jumlah artikel hasil filter.
-  Widget _buildSectionTitle(List<Post> rest) {
+  Widget _buildSectionTitle() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -304,7 +402,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// Tombol mengambang "Tulis" di pojok kanan bawah untuk membuat artikel.
 class _GradientFab extends StatelessWidget {
   final VoidCallback onPressed;
 
@@ -326,7 +423,6 @@ class _GradientFab extends StatelessWidget {
   }
 }
 
-// Kartu besar berisi artikel terbaru (paling atas), dengan gaya sesuai kategori.
 class _FeaturedCard extends StatelessWidget {
   final Post post;
   final VoidCallback onTap;
@@ -336,6 +432,7 @@ class _FeaturedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = categoryStyle(post.category);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -387,7 +484,10 @@ class _FeaturedCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.22),
                       borderRadius: BorderRadius.circular(20),
@@ -425,7 +525,10 @@ class _FeaturedCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         '${post.readMinutes} menit baca',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -439,7 +542,6 @@ class _FeaturedCard extends StatelessWidget {
   }
 }
 
-// Kartu kecil berisi satu artikel (penulis, judul, ringkasan, kategori).
 class _PostCard extends StatelessWidget {
   final Post post;
   final VoidCallback onTap;
@@ -449,6 +551,7 @@ class _PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = categoryStyle(post.category);
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -588,8 +691,6 @@ class _PostCard extends StatelessWidget {
   }
 }
 
-// Bulatan warna berisi huruf awal nama penulis.
-// Warna dihitung dari huruf nama, jadi tiap penulis dapat warna berbeda.
 class _AuthorAvatar extends StatelessWidget {
   final String name;
 
@@ -598,6 +699,7 @@ class _AuthorAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hue = (name.codeUnits.fold<int>(0, (a, b) => a + b) * 37) % 360;
+
     return Container(
       width: 24,
       height: 24,
@@ -606,7 +708,12 @@ class _AuthorAvatar extends StatelessWidget {
         gradient: LinearGradient(
           colors: [
             HSLColor.fromAHSL(1, hue.toDouble(), 0.65, 0.6).toColor(),
-            HSLColor.fromAHSL(1, (hue + 40) % 360, 0.65, 0.45).toColor(),
+            HSLColor.fromAHSL(
+              1,
+              ((hue + 40) % 360).toDouble(),
+              0.65,
+              0.45,
+            ).toColor(),
           ],
         ),
         shape: BoxShape.circle,
@@ -623,7 +730,6 @@ class _AuthorAvatar extends StatelessWidget {
   }
 }
 
-// Tampilan saat tidak ada artikel yang cocok dengan pencarian/kategori.
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
@@ -640,7 +746,11 @@ class _EmptyState extends StatelessWidget {
               color: AppColors.primarySoft,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Icon(Icons.search_off_rounded, size: 30, color: AppColors.primary),
+            child: const Icon(
+              Icons.search_off_rounded,
+              size: 30,
+              color: AppColors.primary,
+            ),
           ),
           const SizedBox(height: 14),
           const Text(
@@ -648,9 +758,9 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
-          Text(
+          const Text(
             'Coba kata kunci lain atau kategori berbeda.',
-            style: const TextStyle(color: AppColors.inkSoft, fontSize: 13),
+            style: TextStyle(color: AppColors.inkSoft, fontSize: 13),
           ),
         ],
       ),
