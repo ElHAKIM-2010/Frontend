@@ -7,7 +7,7 @@ import 'models/post.dart';
 import 'pages/detailpages.dart';
 import 'pages/tambahpost.dart';
 import 'theme.dart';
-import 'services/api_services.dart';
+import 'services/api_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -321,7 +321,7 @@ class _HomePageState extends State<HomePage> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: categories.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             final cat = categories[index];
             final isSelected = cat == selectedCategory;

@@ -1,18 +1,17 @@
 // lib/pages/editpost.dart
 // Halaman "Edit Artikel" untuk mengubah postingan yang sudah ada.
+
 import 'package:flutter/material.dart';
+
 import '../models/post.dart';
+import '../services/api_service.dart';
 import '../theme.dart';
 import 'post_form.dart';
 
 class EditPostPage extends StatelessWidget {
-  // Artikel lama yang sedang diedit.
   final Post post;
 
-  const EditPostPage({
-    super.key,
-    required this.post,
-  });
+  const EditPostPage({super.key, required this.post});
 
   @override
   Widget build(BuildContext context) {
@@ -27,10 +26,38 @@ class EditPostPage extends StatelessWidget {
       ),
       body: PostForm(
         submitLabel: 'Simpan',
-        // Form diisi data lama (initialPost); saat disimpan,
-        // hasil edit dikembalikan ke halaman detail.
         initialPost: post,
-        onSubmit: (updated) => Navigator.pop(context, updated),
+        onSubmit: (updatedPost) async {
+          if (post.id == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('ID artikel tidak ditemukan.')),
+            );
+            return;
+          }
+
+          try {
+            await ApiService.updatePost(
+              id: post.id!,
+              title: updatedPost.title,
+              content: updatedPost.content,
+              categoryId: 1,
+            );
+
+            if (!context.mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Artikel berhasil diperbarui.')),
+            );
+
+            Navigator.pop(context, updatedPost);
+          } catch (error) {
+            if (!context.mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Gagal memperbarui artikel: $error')),
+            );
+          }
+        },
       ),
     );
   }

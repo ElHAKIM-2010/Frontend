@@ -1,7 +1,8 @@
 // lib/pages/tambahpost.dart
-// Halaman "Tulis Artikel" untuk membuat postingan baru.
 import 'package:flutter/material.dart';
+
 import '../theme.dart';
+import '../services/api_service.dart';
 import 'post_form.dart';
 
 class TambahPostPage extends StatelessWidget {
@@ -20,10 +21,28 @@ class TambahPostPage extends StatelessWidget {
       ),
       body: PostForm(
         submitLabel: 'Terbitkan',
-        onSubmit: (post) {
-          // TODO: kirim ke REST API -> POST /posts
-          // Kembali ke halaman utama dengan membawa artikel baru.
-          Navigator.pop(context, post);
+        onSubmit: (post) async {
+          try {
+            await ApiService.createPost(
+              title: post.title,
+              content: post.content,
+              categoryId: 1,
+            );
+
+            if (!context.mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Artikel berhasil diterbitkan')),
+            );
+
+            Navigator.pop(context, post);
+          } catch (error) {
+            if (!context.mounted) return;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Gagal menerbitkan artikel: $error')),
+            );
+          }
         },
       ),
     );

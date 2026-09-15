@@ -1,14 +1,12 @@
-// lib/pages/post_form.dart
-// Widget form yang dipakai bersama oleh halaman "Tulis Artikel" (tambah)
-// dan "Edit Artikel". Karena fungsinya sama, cukup tulis satu kali.
 import 'package:flutter/material.dart';
+
 import '../models/post.dart';
 import '../theme.dart';
 
 class PostForm extends StatefulWidget {
   final String submitLabel;
   final Post? initialPost;
-  final void Function(Post post) onSubmit;
+  final Future<void> Function(Post post) onSubmit;
 
   const PostForm({
     super.key,
@@ -22,26 +20,28 @@ class PostForm extends StatefulWidget {
 }
 
 class _PostFormState extends State<PostForm> {
-  // Controller menyimpan isi tiap kolom input.
   late final TextEditingController _titleController;
   late final TextEditingController _contentController;
   late final TextEditingController _categoryController;
   late final TextEditingController _authorController;
 
-  // Saat halaman dibuka:
-  // - Untuk tambah (initialPost = null) => kolom dikosongkan.
-  // - Untuk edit (initialPost berisi data) => kolom diisi dengan data lama.
+  bool _isSubmitting = false;
+
   @override
   void initState() {
     super.initState();
+
     final post = widget.initialPost;
+
     _titleController = TextEditingController(text: post?.title ?? '');
+
     _contentController = TextEditingController(text: post?.content ?? '');
+
     _categoryController = TextEditingController(text: post?.category ?? '');
+
     _authorController = TextEditingController(text: post?.author ?? '');
   }
 
-  // Controller harus dibersihkan agar tidak membocorkan memori.
   @override
   void dispose() {
     _titleController.dispose();
@@ -51,35 +51,49 @@ class _PostFormState extends State<PostForm> {
     super.dispose();
   }
 
-  // Perkiraan lama baca = jumlah kata dibagi 200 kata per menit.
   int get _readMinutes {
-    final words = _contentController.text.trim().split(RegExp(r'\s+'));
+    final content = _contentController.text.trim();
+
+    if (content.isEmpty) {
+      return 1;
+    }
+
+    final words = content.split(RegExp(r'\s+'));
     final minutes = (words.length / 200).ceil();
+
     return minutes < 1 ? 1 : minutes;
   }
 
-  // Ringkasan (excerpt): 140 karakter pertama isi artikel.
   String get _excerpt {
     final plain = _contentController.text.replaceAll('\n', ' ').trim();
-    return plain.length > 140 ? '${plain.substring(0, 140)}...' : plain;
+
+    if (plain.length > 140) {
+      return '${plain.substring(0, 140)}...';
+    }
+
+    return plain;
   }
 
-  // Dipanggil saat tombol submit ditekan.
-  void _submit() {
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final category = _categoryController.text.trim();
     final author = _authorController.text.trim();
 
-    // Validasi: semua kolom wajib diisi.
-    if (title.isEmpty || content.isEmpty || category.isEmpty || author.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Semua kolom wajib diisi.')),
-      );
+    if (title.isEmpty ||
+        content.isEmpty ||
+        category.isEmpty ||
+        author.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Semua kolom wajib diisi.')));
       return;
     }
 
-    final post = widget.initialPost?.copyWith(
+    final post =
+        widget.initialPost?.copyWith(
           title: title,
           content: content,
           category: category,
@@ -96,8 +110,22 @@ class _PostFormState extends State<PostForm> {
           readMinutes: _readMinutes,
         );
 
-    // Serahkan hasil ke halaman yang memanggil form (tambah/edit).
-    widget.onSubmit(post);
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      await widget.onSubmit(post);
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Terjadi kesalahan: $error')));
+
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
   }
 
   @override
@@ -115,7 +143,9 @@ class _PostFormState extends State<PostForm> {
           const SizedBox(height: 10),
           TextField(
             controller: _titleController,
-            decoration: const InputDecoration(hintText: 'Contoh: Cara Membuat Kopi yang Enak'),
+            decoration: const InputDecoration(
+              hintText: 'Contoh: Cara Membuat Kopi yang Enak',
+            ),
             textCapitalization: TextCapitalization.sentences,
           ),
           const SizedBox(height: 24),
@@ -127,7 +157,9 @@ class _PostFormState extends State<PostForm> {
           const SizedBox(height: 10),
           TextField(
             controller: _categoryController,
-            decoration: const InputDecoration(hintText: 'Contoh: Teknologi, Tips, Pendidikan'),
+            decoration: const InputDecoration(
+              hintText: 'Contoh: Teknologi, Tips, Pendidikan',
+            ),
           ),
           const SizedBox(height: 24),
           _SectionLabel(
@@ -155,7 +187,7 @@ class _PostFormState extends State<PostForm> {
           ),
           const SizedBox(height: 28),
           ElevatedButton(
-            onPressed: _submit,
+            onPressed: _isSubmitting ? null : _submit,
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -164,7 +196,16 @@ class _PostFormState extends State<PostForm> {
               backgroundColor: AppColors.primaryDeep,
               foregroundColor: Colors.white,
             ),
-            child: Text(widget.submitLabel),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(widget.submitLabel),
           ),
           const SizedBox(height: 8),
         ],
@@ -173,7 +214,6 @@ class _PostFormState extends State<PostForm> {
   }
 }
 
-// Label kecil berisi ikon + judul + keterangan di atas tiap kolom input.
 class _SectionLabel extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -206,7 +246,10 @@ class _SectionLabel extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               Text(
                 text,
