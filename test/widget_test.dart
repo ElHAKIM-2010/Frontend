@@ -6,6 +6,7 @@ import 'package:frontend/main.dart';
 void main() {
   testWidgets('Blog app renders posts and opens create form', (WidgetTester tester) async {
     await tester.pumpWidget(const BlogApp());
+    await tester.pumpAndSettle();
 
     expect(find.text('Bacain'), findsOneWidget);
     expect(find.text('Belajar Flutter untuk Pemula'), findsOneWidget);

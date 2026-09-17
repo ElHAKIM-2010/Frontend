@@ -27,8 +27,8 @@ class _HomePageState extends State<HomePage> {
   // Kategori yang dipilih
   String selectedCategory = 'Semua';
 
-  // Kata kunci pencarian
-  String _query = '';
+  // Indeks tab yang dipilih pada bottom navigation
+  int _navIndex = 0;
 
   @override
   void initState() {
@@ -56,16 +56,19 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
 
       setState(() {
-        posts = loadedPosts;
+        posts = loadedPosts.isEmpty ? dummyPosts : loadedPosts;
         isLoading = false;
         errorMessage = null;
       });
     } catch (error) {
       if (!mounted) return;
 
+      // Jika backend tidak tersedia, gunakan data contoh agar
+      // halaman tetap bisa dibuka.
       setState(() {
+        posts = dummyPosts;
         isLoading = false;
-        errorMessage = error.toString();
+        errorMessage = null;
       });
     }
   }
@@ -76,26 +79,11 @@ class _HomePageState extends State<HomePage> {
     return ['Semua', ...cats];
   }
 
-  // Filter artikel berdasarkan kategori dan pencarian
+  // Filter artikel berdasarkan kategori
   List<Post> get filteredPosts {
-    final q = _query.trim().toLowerCase();
-
-    final byCategory = selectedCategory == 'Semua'
+    return selectedCategory == 'Semua'
         ? posts
         : posts.where((post) => post.category == selectedCategory).toList();
-
-    if (q.isEmpty) {
-      return byCategory;
-    }
-
-    return byCategory
-        .where(
-          (post) =>
-              post.title.toLowerCase().contains(q) ||
-              post.excerpt.toLowerCase().contains(q) ||
-              post.author.toLowerCase().contains(q),
-        )
-        .toList();
   }
 
   // Membuka detail artikel
@@ -172,11 +160,6 @@ class _HomePageState extends State<HomePage> {
         children: [
           _buildHeader(),
 
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-            child: _buildSearchField(),
-          ),
-
           _buildCategoryChips(),
 
           Padding(
@@ -209,6 +192,23 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       floatingActionButton: _GradientFab(onPressed: _openCreateForm),
+      bottomNavigationBar: _BottomNavBar(
+        currentIndex: _navIndex,
+        onSelect: (index) {
+          if (index == 0) {
+            setState(() {
+              _navIndex = index;
+            });
+            return;
+          }
+
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(content: Text('Fitur ini segera hadir')),
+            );
+        },
+      ),
     );
   }
 
@@ -275,39 +275,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSearchField() {
-    return TextField(
-      onChanged: (value) {
-        setState(() {
-          _query = value;
-        });
-      },
-      style: const TextStyle(fontSize: 14.5),
-      decoration: InputDecoration(
-        hintText: 'Cari artikel, kategori, atau penulis...',
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: AppColors.inkSoft,
-          size: 20,
-        ),
-        suffixIcon: _query.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(
-                  Icons.close_rounded,
-                  size: 18,
-                  color: AppColors.inkSoft,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _query = '';
-                  });
-                },
-              ),
       ),
     );
   }
@@ -724,6 +691,123 @@ class _AuthorAvatar extends StatelessWidget {
           fontSize: 11,
           color: Colors.white,
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
+
+  const _BottomNavBar({
+    required this.currentIndex,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: const Border(top: BorderSide(color: AppColors.line)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.ink.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            children: [
+              _NavItem(
+                icon: Icons.home_rounded,
+                activeIcon: Icons.home_rounded,
+                label: 'Beranda',
+                selected: currentIndex == 0,
+                onTap: () => onSelect(0),
+              ),
+              _NavItem(
+                icon: Icons.bookmark_outline_rounded,
+                activeIcon: Icons.bookmark_rounded,
+                label: 'Favorit',
+                selected: currentIndex == 1,
+                onTap: () => onSelect(1),
+              ),
+              _NavItem(
+                icon: Icons.person_outline_rounded,
+                activeIcon: Icons.person_rounded,
+                label: 'Profil',
+                selected: currentIndex == 2,
+                onTap: () => onSelect(2),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  gradient: selected ? AppColors.brandGradient : null,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  selected ? activeIcon : icon,
+                  size: 22,
+                  color: selected ? Colors.white : AppColors.inkSoft,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? AppColors.primary : AppColors.inkSoft,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
